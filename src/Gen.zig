@@ -1,0 +1,192 @@
+const std = @import("std");
+
+const Gen = @This();
+
+const Pair = struct {
+    fst: usize = 0,
+    scd: usize,
+};
+
+pairs: std.ArrayListUnmanaged(Pair),
+allocator: std.mem.Allocator,
+is_running: bool = false,
+pair_idx: usize = 0,
+
+pub fn initCapacity(allocator: std.mem.Allocator, capacity: usize) !Gen {
+    return .{
+        .pairs = try std.ArrayListUnmanaged(Pair).initCapacity(allocator, capacity),
+        .allocator = allocator,
+    };
+}
+
+pub fn deinit(self: *Gen) void {
+    self.pairs.deinit(self.allocator);
+}
+
+pub fn isRunning(self: *Gen) bool {
+    if (!self.is_running) {
+        self.is_running = true;
+        return true;
+    }
+
+    var i = self.pairs.items.len;
+    while (i > 0) {
+        i -= 1;
+        if (self.pairs.items[i].fst < self.pairs.items[i].scd) {
+            self.pairs.items[i].fst += 1;
+            self.pairs.shrinkRetainingCapacity(i + 1);
+            self.pair_idx = 0;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+pub fn generate(self: *Gen, bound: usize) !usize {
+    if (self.pair_idx == self.pairs.items.len) {
+        try self.pairs.append(self.allocator, .{ .scd = bound });
+    }
+    defer self.pair_idx += 1;
+    return self.pairs.items[self.pair_idx].fst;
+}
+
+pub fn generateBool(self: *Gen) !bool {
+    return try self.generate(1) == 1;
+}
+
+pub fn generateIndex(self: *Gen, bound: usize) !usize {
+    return try self.generate(bound - 1);
+}
+
+pub fn generateSequence(self: *Gen, bound: usize, max_elem: usize, output: []usize) !void {
+    const fixed = try self.generate(bound);
+    std.debug.assert(output.len >= fixed);
+    for (0..fixed) |i| {
+        output[i] = try self.generate(max_elem);
+    }
+}
+
+pub fn generateCombination(self: *Gen, comptime T: type, input: []const T, output: []T) !void {
+    const fixed = try self.generate(input.len);
+    std.debug.assert(output.len >= fixed);
+    for (0..fixed) |i| {
+        output[i] = input[try self.generateIndex(input.len)];
+    }
+}
+
+pub fn generatePermutation(self: *Gen, comptime T: type, input: []const T, output: []T) !void {
+    std.debug.assert(output.len >= input.len);
+    var idxs = try std.ArrayListUnmanaged(usize).initCapacity(self.allocator, input.len);
+    defer idxs.deinit(self.allocator);
+    for (0..input.len) |i| {
+        idxs.appendAssumeCapacity(i);
+    }
+    for (0..input.len) |i| {
+        output[i] = input[idxs.orderedRemove(try self.generateIndex(idxs.items.len))];
+    }
+}
+
+pub fn generateSubset(self: *Gen, comptime T: type, input: []const T, output: []?T) !void {
+    std.debug.assert(output.len >= input.len);
+    for (input, 0..) |byte, i| {
+        output[i] = if (try self.generateBool()) byte else null;
+    }
+}
+
+test generateIndex {
+    const input = [_]u8{ 1, 2, 3, 4, 5 };
+
+    var gen = try Gen.initCapacity(std.testing.allocator, input.len);
+    defer gen.deinit();
+
+    var i: usize = 0;
+    while (gen.isRunning()) {
+        std.debug.print("{}\n", .{try gen.generateIndex(input.len)});
+        i += 1;
+    }
+
+    try std.testing.expectEqual(i, 5);
+}
+
+test generateSequence {
+    var gen = try Gen.initCapacity(std.testing.allocator, 5);
+    defer gen.deinit();
+
+    const bound: usize = 3;
+    var i: usize = 0;
+    while (gen.isRunning()) {
+        var output: [bound]usize = undefined;
+        try gen.generateSequence(bound, 4, output[0..]);
+        for (output) |elem| {
+            std.debug.print("{} ", .{elem});
+        }
+        std.debug.print("\n", .{});
+        i += 1;
+    }
+
+    try std.testing.expectEqual(i, (5 * 5 * 5) + (5 * 5) + 5 + 1);
+}
+
+test generateCombination {
+    const input = [_]u8{ 1, 2, 3, 4, 5 };
+
+    var gen = try Gen.initCapacity(std.testing.allocator, input.len);
+    defer gen.deinit();
+
+    const bound: usize = input.len;
+    var i: usize = 0;
+    while (gen.isRunning()) {
+        var output: [bound]u8 = undefined;
+        try gen.generateCombination(u8, input[0..], output[0..]);
+        for (output) |elem| {
+            std.debug.print("{} ", .{elem});
+        }
+        std.debug.print("\n", .{});
+        i += 1;
+    }
+
+    try std.testing.expectEqual(i, (5 * 5 * 5 * 5 * 5) + (5 * 5 * 5 * 5) + (5 * 5 * 5) + (5 * 5) + 5 + 1);
+}
+
+test generatePermutation {
+    const input = [_]u8{ 1, 2, 3, 4, 5 };
+
+    var gen = try Gen.initCapacity(std.testing.allocator, input.len);
+    defer gen.deinit();
+
+    const bound: usize = input.len;
+    var i: usize = 0;
+    while (gen.isRunning()) {
+        var output: [bound]u8 = undefined;
+        try gen.generatePermutation(u8, input[0..], output[0..]);
+        for (output) |elem| {
+            std.debug.print("{} ", .{elem});
+        }
+        std.debug.print("\n", .{});
+        i += 1;
+    }
+
+    try std.testing.expectEqual(i, 5 * 4 * 3 * 2 * 1);
+}
+
+test generateSubset {
+    const input = [_]u8{ 1, 2, 3, 4, 5 };
+
+    var gen = try Gen.initCapacity(std.testing.allocator, input.len);
+    defer gen.deinit();
+
+    const bound: usize = input.len;
+    var i: usize = 0;
+    while (gen.isRunning()) {
+        var output: [bound]?u8 = undefined;
+        try gen.generateSubset(u8, input[0..], output[0..]);
+        for (output) |elem_opt| {
+            std.debug.print("{} ", .{elem_opt orelse continue});
+        }
+        std.debug.print("\n", .{});
+        i += 1;
+    }
+
+    try std.testing.expectEqual(i, 1 << 5);
+}
