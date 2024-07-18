@@ -7,13 +7,13 @@ pub fn build(b: *std.Build) void {
     const version = std.SemanticVersion{ .major = 0, .minor = 1, .patch = 0 };
 
     // Module
-    _ = b.addModule("exhaustigen", .{ .root_source_file = root_source_file });
+    _ = b.addModule("Gen", .{ .root_source_file = root_source_file });
 
     // Library
     const lib_step = b.step("lib", "Install library");
 
     const lib = b.addStaticLibrary(.{
-        .name = "exhaustigen",
+        .name = "Gen",
         .target = target,
         .version = version,
         .optimize = optimize,
