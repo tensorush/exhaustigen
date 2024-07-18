@@ -1,3 +1,5 @@
+//! Exhaustive testing generator.
+
 const std = @import("std");
 
 const Gen = @This();
@@ -23,6 +25,10 @@ pub fn deinit(self: *Gen) void {
     self.pairs.deinit(self.allocator);
 }
 
+/// Returns `true` when every range of values implied by calls to `generate`
+/// is finished. Otherwise restarts the innermost incomplete range, continuing
+/// the exhaustive scan. This method should be called as the condition of a
+/// `while` loop enclosing the test you wish to repeat exhaustively.
 pub fn isRunning(self: *Gen) bool {
     if (!self.is_running) {
         self.is_running = true;
@@ -43,6 +49,10 @@ pub fn isRunning(self: *Gen) bool {
     return false;
 }
 
+/// Returns a value (eventually every value) between 0 and `bound` inclusive.
+/// Every other value-generating method in this type ultimately funnels into
+/// this method, which is responsible (in concert with `isRunning`) for opening
+/// and stepping through ranges of the generator's state-space.
 pub fn generate(self: *Gen, bound: usize) !usize {
     if (self.pair_idx == self.pairs.items.len) {
         try self.pairs.append(self.allocator, .{ .scd = bound });
@@ -51,22 +61,29 @@ pub fn generate(self: *Gen, bound: usize) !usize {
     return self.pairs.items[self.pair_idx].fst;
 }
 
+/// Returns false, then true.
 pub fn generateBool(self: *Gen) !bool {
     return try self.generate(1) == 1;
 }
 
+/// Returns an index (eventually every index) < `bound`.
 pub fn generateIndex(self: *Gen, bound: usize) !usize {
     return try self.generate(bound - 1);
 }
 
-pub fn generateSequence(self: *Gen, bound: usize, max_elem: usize, output: []usize) !void {
+/// Generates a sequence (eventually every such sequence)
+/// of variable-value elements. The sequence's length == `bound`
+/// and each element's value <= `max_val`.
+pub fn generateSequence(self: *Gen, bound: usize, max_val: usize, output: []usize) !void {
     const fixed = try self.generate(bound);
     std.debug.assert(output.len >= fixed);
     for (0..fixed) |i| {
-        output[i] = try self.generate(max_elem);
+        output[i] = try self.generate(max_val);
     }
 }
 
+/// Generates a combination (eventually every combination) of elements
+/// selected from provided `input` slice, up to the size of that slice.
 pub fn generateCombination(self: *Gen, comptime T: type, input: []const T, output: []T) !void {
     const fixed = try self.generate(input.len);
     std.debug.assert(output.len >= fixed);
@@ -75,6 +92,7 @@ pub fn generateCombination(self: *Gen, comptime T: type, input: []const T, outpu
     }
 }
 
+/// Generates a permutation (eventually every permutation) of the `input` slice.
 pub fn generatePermutation(self: *Gen, comptime T: type, input: []const T, output: []T) !void {
     std.debug.assert(output.len >= input.len);
     var idxs = try std.ArrayListUnmanaged(usize).initCapacity(self.allocator, input.len);
@@ -87,6 +105,7 @@ pub fn generatePermutation(self: *Gen, comptime T: type, input: []const T, outpu
     }
 }
 
+/// Generates a subset (eventually every subset) of the `input` slice.
 pub fn generateSubset(self: *Gen, comptime T: type, input: []const T, output: []?T) !void {
     std.debug.assert(output.len >= input.len);
     for (input, 0..) |byte, i| {
